@@ -25,6 +25,10 @@ BRIDGE_DISCOVERY_API = "https://api.nuki.io/discover/bridges"
 BRIDGE_HOOK = "nuki_ng_bridge_hook"
 BRIDGE_TIMEOUT = 10
 
+LOCK_DEVICE_TYPES = (0, 3, 4, 5)
+OPENER_DEVICE_TYPES = (2,)
+WEB_DEVICE_TYPES = (0, 2, 4, 5)  # Type 3 (Smart Door) is bridge-only
+
 class NukiInterface:
     def __init__(
         self, hass, *, bridge: str = None, token: str = None, web_token: str = None, use_hashed: bool = False
@@ -201,25 +205,20 @@ class NukiInterface:
             4: "lock_n_go",
             5: "lock_n_go_unlatch",
         }
-        device_actions_map = {
-            0: lock_actions_map,
-            2: {
-                1: "activate_rto",
-                2: "deactivate_rto",
-                3: "electric_strike_actuation",
-                6: "activate_continuous_mode",
-                7: "deactivate_continuous_mode",
-            },
-            3: lock_actions_map,
-            4: lock_actions_map,
-        }
-        device_actions_map[4] = device_actions_map[0]
+        device_actions_map = {t: lock_actions_map for t in LOCK_DEVICE_TYPES}
+        device_actions_map.update({t: {
+            1: "activate_rto",
+            2: "deactivate_rto",
+            3: "electric_strike_actuation",
+            6: "activate_continuous_mode",
+            7: "deactivate_continuous_mode",
+        } for t in OPENER_DEVICE_TYPES})
         response = await self.web_async_json(
             lambda r, h: r.get(self.web_url(f"/smartlock/{dev_id}/log"), headers=h)
         )
         _LOGGER.debug(f"web_get_last_log ({dev_id}): {response}")
         for item in response:
-            actions_map = device_actions_map.get(item.get("deviceType"), 0)
+            actions_map = device_actions_map.get(item.get("deviceType"), {})
             if item.get("action") in actions_map.keys():
                 return {
                     "name": item.get("name"),
@@ -280,26 +279,22 @@ class NukiInterface:
             254: "motor blocked",
             255: "undefined",
         }
-        device_state_map = {
-            0: lock_state_map,
-            2: {
-                0: "untrained",
-                1: "online",
-                3: "ring to open active",
-                5: "open",
-                7: "opening",
-                253: "boot run",
-                255: "undefined",
-            },
-            3: lock_state_map,
-            4: lock_state_map,
-        }
+        device_state_map = {t: lock_state_map for t in LOCK_DEVICE_TYPES}
+        device_state_map.update({t: {
+            0: "untrained",
+            1: "online",
+            3: "ring to open active",
+            5: "open",
+            7: "opening",
+            253: "boot run",
+            255: "undefined",
+        } for t in OPENER_DEVICE_TYPES})
         resp = await self.web_async_json(
             lambda r, h: r.get(self.web_url(f"/smartlock"), headers=h)
         )
         result = dict()
         for item in resp:
-            if item.get("type") not in (0, 2, 4):
+            if item.get("type") not in WEB_DEVICE_TYPES:
                 continue
             state = item.get("state", {})
             result[item.get("smartlockId")] = {
@@ -415,12 +410,8 @@ class NukiCoordinator(DataUpdateCoordinator):
                     return item["nukiId"] # Already in web mode
                 as_hex = "{0:x}".format(item["nukiId"])
                 deviceType = item.get("deviceType", 0)
-                if deviceType == 2:
-                    as_hex = f"2{as_hex}"
-                elif deviceType == 3:
-                    as_hex = f"3{as_hex}"
-                elif deviceType == 4:
-                    as_hex = f"4{as_hex}"
+                if deviceType != 0:
+                    as_hex = f"{deviceType}{as_hex}"
                 return int(as_hex, 16)
             if self.api.can_bridge():
                 try:
@@ -546,10 +537,10 @@ class NukiCoordinator(DataUpdateCoordinator):
         return self.data.get("info", {})
 
     def is_lock(self, dev_id: str) -> bool:
-        return self.device_data(dev_id).get("deviceType") in (0, 3, 4)
+        return self.device_data(dev_id).get("deviceType") in LOCK_DEVICE_TYPES
 
     def is_opener(self, dev_id: str) -> bool:
-        return self.device_data(dev_id).get("deviceType") == 2
+        return self.device_data(dev_id).get("deviceType") in OPENER_DEVICE_TYPES
 
     def device_supports(self, dev_id: str, feature: str) -> bool:
         return self.device_data(dev_id).get("lastKnownState", {}).get(feature) != None

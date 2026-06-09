@@ -13,13 +13,6 @@
           "update_seconds": "State polling interval (seconds)"
         }
       },
-      "select_lock": {
-        "title": "Select lock",
-        "description": "Choose which lock this integration entry should manage. Create one entry per lock.",
-        "data": {
-          "lock_id": "Lock"
-        }
-      }
     },
     "error": {
       "invalid_bridge_token": "Error communicating with Nuki bridge",

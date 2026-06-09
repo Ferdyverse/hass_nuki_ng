@@ -13,13 +13,6 @@
             "update_seconds": "Intervall der Statusabfrage (Sekunden)"
           }
         },
-        "select_lock": {
-          "title": "Schloss auswählen",
-          "description": "Wähle, welches Schloss dieser Integrationseintrag verwalten soll. Lege pro Schloss einen eigenen Eintrag an.",
-          "data": {
-            "lock_id": "Schloss"
-          }
-        }
       },
       "error": {
         "invalid_bridge_token": "Fehler in der Kommunikation mit der Nuki Bridge",

@@ -77,7 +77,8 @@ def _install_ha_stubs():
         "homeassistant.components.webhook":           {"async_unregister": lambda *a, **kw: None,
                                                        "async_register":   lambda *a, **kw: None,
                                                        "async_generate_path": lambda hook_id: f"/{hook_id}"},
-        "homeassistant.config_entries":               {"ConfigEntry": ConfigEntry},
+        "homeassistant.config_entries":               {"ConfigEntry": ConfigEntry,
+                                                       "SOURCE_INTEGRATION_DISCOVERY": "integration_discovery"},
     }
 
     for name, attrs in stub_map.items():

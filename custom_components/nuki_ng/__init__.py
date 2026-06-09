@@ -4,7 +4,7 @@ import logging
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import service
 from homeassistant.helpers.entity import EntityCategory
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, SOURCE_INTEGRATION_DISCOVERY
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .nuki import NukiCoordinator
@@ -20,6 +20,28 @@ _LOGGER = logging.getLogger(__name__)
 #  Home Assistant Setup
 # ------------------------------------------------------
 
+def _trigger_lock_discovery(hass: HomeAssistant, source_entry: ConfigEntry, coordinator: NukiCoordinator):
+    """Spawn a discovery flow for every lock that has no config entry yet."""
+    existing = {
+        e.data["lock_id"]
+        for e in hass.config_entries.async_entries(DOMAIN)
+        if "lock_id" in e.data
+    }
+    for dev_id, device in coordinator.data.get("devices", {}).items():
+        if str(dev_id) not in existing:
+            hass.async_create_task(
+                hass.config_entries.flow.async_init(
+                    DOMAIN,
+                    context={"source": SOURCE_INTEGRATION_DISCOVERY},
+                    data={
+                        **dict(source_entry.data),
+                        "lock_id": str(dev_id),
+                        "lock_name": device.get("name", str(dev_id)),
+                    },
+                )
+            )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     data = entry.as_dict()["data"]
     _LOGGER.debug(f"async_setup_entry: {data}")
@@ -29,6 +51,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     await coordinator.async_config_entry_first_refresh()
     await coordinator.sync_on_start()
+
+    _trigger_lock_discovery(hass, entry, coordinator)
+    entry.async_on_unload(
+        coordinator.async_add_listener(
+            lambda: _trigger_lock_discovery(hass, entry, coordinator)
+        )
+    )
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True

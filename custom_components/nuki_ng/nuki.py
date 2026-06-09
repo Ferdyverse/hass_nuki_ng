@@ -441,6 +441,12 @@ class NukiCoordinator(DataUpdateCoordinator):
                     _LOGGER.exception("Error while fetching list of devices via web API:")
                 if not device_list:
                     device_list = web_list
+            configured_lock_id = self.entry.data.get("lock_id")
+            if configured_lock_id is not None and device_list:
+                device_list = {
+                    k: v for k, v in device_list.items()
+                    if str(k) == str(configured_lock_id)
+                }
             result = dict(devices={}, bridge_info=bridge_info)
             if not device_list:
                 raise HomeAssistantError("No available device data")

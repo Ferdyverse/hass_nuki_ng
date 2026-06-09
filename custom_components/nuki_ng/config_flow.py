@@ -29,32 +29,38 @@ class NukiNGConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if hass_url.lower().startswith("https://"):
                 _LOGGER.error(
                     f"Bridge doesn't support HTTPS callback URLs: {hass_url}")
-                return title, "https_not_supported", None
+                return title, "https_not_supported", None, {}
             try:
                 info = await nuki.bridge_info()
                 use_hashed_token = info.get("bridgeType") == 1
                 response = await nuki.bridge_list()
                 _LOGGER.debug(f"bridge devices: {response}")
-                first_device = next(iter(response.values()), {})
-                title = first_device.get("name")
-                if not title:
-                    return title, "invalid_bridge_token", None
+                if not response:
+                    return title, "invalid_bridge_token", None, {}
+                locks = {str(k): v.get("name", str(k)) for k, v in response.items()}
+                title = next(iter(locks.values()))
             except Exception as err:
                 _LOGGER.exception(
                     f"Failed to get list of devices from bridge: {err}")
-                return title, "invalid_bridge_token", None
+                return title, "invalid_bridge_token", None, {}
+        elif nuki.web_token:
+            locks = {}
+        else:
+            locks = {}
         if nuki.web_token:
             try:
                 response = await nuki.web_list()
                 _LOGGER.debug(f"web devices: {response}")
-                if not title:
-                    first_device = next(iter(response.values()), {})
-                    title = first_device.get("name")
+                if not locks:
+                    locks = {str(k): v.get("name", str(k)) for k, v in response.items()}
+                    title = next(iter(locks.values()), None)
             except Exception as err:
                 _LOGGER.exception(
                     f"Failed to get list of devices from web API: {err}")
-                return title, "invalid_web_token", None
-        return title, None, use_hashed_token
+                return title, "invalid_web_token", None, {}
+        if not locks:
+            return title, "invalid_bridge_token", None, {}
+        return title, None, use_hashed_token, locks
 
     def _get_hass_url(self, hass):
         try:
@@ -79,14 +85,27 @@ class NukiNGConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         elif user_input.get("token") and not user_input.get("address"):
             errors = dict(base="no_bridge_url")
         elif user_input.get("token") or user_input.get("web_token"):
-            title, err, use_hashed_token = await self.find_nuki_devices(user_input)
+            title, err, use_hashed_token, locks = await self.find_nuki_devices(user_input)
             if not err:
+                config = {**user_input, "use_hashed": use_hashed_token}
+                first_id, first_name = next(iter(locks.items()))
+
+                await self.async_set_unique_id(first_id)
+                self._abort_if_unique_id_configured()
+
+                # Spawn discovery flows for all remaining locks immediately
+                for lock_id, lock_name in list(locks.items())[1:]:
+                    self.hass.async_create_task(
+                        self.hass.config_entries.flow.async_init(
+                            DOMAIN,
+                            context={"source": config_entries.SOURCE_INTEGRATION_DISCOVERY},
+                            data={**config, "lock_id": lock_id, "lock_name": lock_name},
+                        )
+                    )
+
                 return self.async_create_entry(
-                    title=user_input.get("name") or title,
-                    data={
-                        **user_input,
-                        "use_hashed": use_hashed_token,
-                    }
+                    title=user_input.get("name") or first_name,
+                    data={**config, "lock_id": first_id},
                 )
             errors = dict(base=err)
         schema = vol.Schema({
@@ -102,6 +121,19 @@ class NukiNGConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         })
         return self.async_show_form(
             step_id="user", data_schema=schema, errors=errors
+        )
+
+    async def async_step_integration_discovery(self, discovery_info: dict):
+        """Auto-create a config entry for a newly discovered lock."""
+        lock_id = str(discovery_info["lock_id"])
+        lock_name = discovery_info.get("lock_name", lock_id)
+
+        await self.async_set_unique_id(lock_id)
+        self._abort_if_unique_id_configured()
+
+        return self.async_create_entry(
+            title=lock_name,
+            data=discovery_info,
         )
 
     # def async_get_options_flow(config_entry):

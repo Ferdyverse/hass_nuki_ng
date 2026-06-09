@@ -12,6 +12,13 @@
           "hass_url": "Home Assistant internal URL",
           "update_seconds": "State polling interval (seconds)"
         }
+      },
+      "select_lock": {
+        "title": "Select lock",
+        "description": "Choose which lock this integration entry should manage. Create one entry per lock.",
+        "data": {
+          "lock_id": "Lock"
+        }
       }
     },
     "error": {

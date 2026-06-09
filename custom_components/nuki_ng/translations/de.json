@@ -12,6 +12,13 @@
             "hass_url": "Home Assistant interne URL",
             "update_seconds": "Intervall der Statusabfrage (Sekunden)"
           }
+        },
+        "select_lock": {
+          "title": "Schloss auswählen",
+          "description": "Wähle, welches Schloss dieser Integrationseintrag verwalten soll. Lege pro Schloss einen eigenen Eintrag an.",
+          "data": {
+            "lock_id": "Schloss"
+          }
         }
       },
       "error": {
@@ -33,4 +40,3 @@
       }
     }
   }
-  

@@ -12,6 +12,10 @@ _LOGGER = logging.getLogger(__name__)
 
 class NukiNGConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
+    def __init__(self):
+        self._config_data = {}
+        self._available_locks = {}
+
     async def async_step_reauth(self, user_input):
         return await self.async_step_user(user_input)
 
@@ -81,13 +85,8 @@ class NukiNGConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         elif user_input.get("token") or user_input.get("web_token"):
             title, err, use_hashed_token = await self.find_nuki_devices(user_input)
             if not err:
-                return self.async_create_entry(
-                    title=user_input.get("name") or title,
-                    data={
-                        **user_input,
-                        "use_hashed": use_hashed_token,
-                    }
-                )
+                self._config_data = {**user_input, "use_hashed": use_hashed_token}
+                return await self.async_step_select_lock(None)
             errors = dict(base=err)
         schema = vol.Schema({
             vol.Optional("address", default=user_input.get("address", "")): cv.string,
@@ -103,6 +102,51 @@ class NukiNGConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="user", data_schema=schema, errors=errors
         )
+
+    async def async_step_select_lock(self, user_input):
+        """Let the user choose which lock this entry should manage."""
+        if user_input is not None:
+            lock_id = user_input["lock_id"]
+            lock_name = self._available_locks.get(lock_id, lock_id)
+            return self.async_create_entry(
+                title=self._config_data.get("name") or lock_name,
+                data={**self._config_data, "lock_id": lock_id},
+            )
+
+        nuki = NukiInterface(
+            self.hass,
+            bridge=self._config_data.get("address"),
+            token=self._config_data.get("token"),
+            web_token=self._config_data.get("web_token"),
+        )
+
+        locks = {}
+        if nuki.can_bridge():
+            try:
+                bridge_devices = await nuki.bridge_list()
+                locks = {str(k): v.get("name", str(k)) for k, v in bridge_devices.items()}
+            except Exception:
+                _LOGGER.exception("Failed to get bridge device list for lock selection")
+        if not locks and nuki.can_web():
+            try:
+                web_devices = await nuki.web_list()
+                locks = {str(k): v.get("name", str(k)) for k, v in web_devices.items()}
+            except Exception:
+                _LOGGER.exception("Failed to get web device list for lock selection")
+
+        self._available_locks = locks
+
+        if len(locks) == 1:
+            lock_id, lock_name = next(iter(locks.items()))
+            return self.async_create_entry(
+                title=self._config_data.get("name") or lock_name,
+                data={**self._config_data, "lock_id": lock_id},
+            )
+
+        schema = vol.Schema({
+            vol.Required("lock_id"): vol.In(locks),
+        })
+        return self.async_show_form(step_id="select_lock", data_schema=schema)
 
     # def async_get_options_flow(config_entry):
     #     return OptionsFlowHandler(config_entry)

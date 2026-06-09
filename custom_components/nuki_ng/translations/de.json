@@ -12,7 +12,7 @@
             "hass_url": "Home Assistant interne URL",
             "update_seconds": "Intervall der Statusabfrage (Sekunden)"
           }
-        },
+        }
       },
       "error": {
         "invalid_bridge_token": "Fehler in der Kommunikation mit der Nuki Bridge",
